@@ -1,0 +1,205 @@
+---
+title: "STA303/1002 Mini-portfolio"
+subtitle: "An exploration of data wrangling, visualization, hypothesis testing and writing skills"
+author: "Yichun Zhang"
+date: 2022-02-03
+lang: "en"
+output:
+ pdf_document:
+  template: template.tex
+  toc: true
+  toc_depth: 2
+titlepage: true
+titlepage-color: "E7C2BA"
+titlepage-text-color: "FFFFFF"
+titlepage-rule-color: "FFFFFF"
+titlepage-rule-height: 2
+urlcolor: blue
+linkcolor: black
+---
+
+\listoffigures
+
+\newpage
+
+# Introduction
+
+This mini-portfolio is coursework for STA302 (Methods of Data Analysis II). STA302 focuses on advanced statistical methods. Objectives of STA302 include wrangling and exploring datasets, making data visualizations, writing and executing `R` code, and interpreting results. This mini-portfolio practiced the above objectives. The mini portfolio is done with `R`. I wrote and executed `R` codes and exported them with RMarkdown. 
+
+In task one, I explored useful packages in `R`. In task two, I visualized the variance of a binomial random variable for varying proportions. The result shows that for a fixed value of n, the variance is largest when p = 0.5 for a binomial random variable. A binomial random variable is a distribution, where n and p are parameters. This task I applied data visualization and statistical analysis skills. Task three also involves data visualization, as well as using confidence intervals. In the last task, I imported and explored data “sta303-mini-portfolio-poverty.xlsx” that records students’ cGPA and their answers about poverty. I investigated whether students’ cGPA is associated with answering poverty questions correctly. The method applied is a hypothesis test and the result shows that we cannot reject that there is no association between cGPA and the correctness of the poverty question. 
+
+After the statistical study, the second section of this mini-portfolio is a writing sample. Given the job description of data scientist at Yelp, I reflected on skills that are required according to this job description, and how I have developed related skills. I also reflected on how I can prepare myself better before the job. 
+
+\newpage
+
+# Statistical skills sample
+
+## Setting up libraries
+
+```{r setup, message=FALSE}
+# Load packages 
+library(tidyverse)
+library(readxl)
+```
+
+
+## Visualizing the variance of a Binomial random variable for varying proportions
+
+```{r fig.height=3, fig.cap="Variance of a binomial random variable for varing proportions, given n = 303"}
+# Assign n1 = 303 and n2 = 606
+n1 = 303 
+n2 = 606
+# Create a vector, props, from 0 to 1, in steps of 0.01
+props = seq(0, 1, 0.01)
+# Use for_plot to create a tibble records props and variance of n1 and n2
+for_plot = tibble(props, 
+                  n1_var = n1*props*(1-props), 
+                  n2_var = n2*props*(1-props))
+# Plot 1: n = 303
+for_plot %>% ggplot(aes(x = props, y = n1_var)) + 
+  geom_line()+theme_minimal()+labs(caption = "Created. by Yichun Zhang in STA303, Winter 2022")+xlab("Proportion")+ylab("Variance")
+```
+
+```{r fig.height=3, fig.cap="Variance of a binomial random variable for varing proportions, given n = 606"}
+# Plot 2: n = 606
+for_plot %>% ggplot(aes(x = props, y = n2_var)) + 
+  geom_line()+theme_minimal()+labs(caption = "Created. by Yichun Zhang in STA303, Winter 2022")+xlab("Proportion")+ylab("Variance")
+```
+
+\newpage
+
+## Demonstrating frequentist confidence intervals as long-run probabilities of capturing a population parameter
+
+```{r fig.width=9, fig.height=11, fig.cap="Exploring our long-run 'confidence' in confidence intervals. This figure shows how often 95% confidence intervals from 100 simple random samples capture the population mean. The population was simulated from N(10, 2)"}
+
+# Set seed being my last 3 digits of student number
+set.seed(187)
+# Setting up parameters
+sim_mean <- 10
+sim_sd <- sqrt(2)
+sample_size <- 30
+number_of_samples <- 100
+
+# Calculate t-multiplier for the 95% confidence interval
+tmult = qt(0.975, df = sample_size - 1)
+# then I simulated population
+population = rnorm(1000, sim_mean, sim_sd)
+# save population mean as pop_param
+pop_param = mean(population)
+# Get 100 samples of size 30
+sample_set <- unlist(lapply(1:number_of_samples, 
+                            function (x) sample(population, size = sample_size)))
+# Create a vector group_id to label values from 100 different samples 
+group_id = rep(1:100, each = 30)
+# Use my_sim to store group_id and sample_set
+my_sim = tibble(group_id, sample_set)
+# Change vi_vals
+ci_vals <- my_sim %>% group_by(group_id) %>%
+  summarise(mean = mean(sample_set), sd = sd(sample_set)) %>%
+  mutate(lower = mean - tmult*sd/sqrt(sample_size), 
+         upper = mean + tmult*sd/sqrt(sample_size), 
+         capture = (pop_param >= lower) & (pop_param <= upper))
+
+proportion_capture = mean(ci_vals$capture)
+# Plot 100 confidence intervals in one plot, with the means indicating as points and dotted line for population parameter
+ci_vals %>% ggplot(aes(x = group_id, y = mean, color = capture)) + 
+  geom_point() + geom_errorbar(aes(ymin = lower, ymax = upper))+
+  scale_color_manual(values=c("#B80000", "#122451"))+
+  labs(caption = "Created by Yichun Zhang in STA302, Winter 2022", 
+       color = "CI captures population parameter")+
+  geom_hline(yintercept = pop_param, linetype = "dotted")+
+  coord_flip()+theme_minimal()+
+  theme(legend.position = "bottom", 
+        axis.title.y = element_blank(), 
+        axis.title.x = element_blank(), 
+        axis.text.y = element_blank())
+```
+
+'r proportion_capture*100` % of my intervals capture the population parameter. 
+COMMENT
+
+
+## Investigating whether there is an association between cGPA and STA303/1002 students correctly answering a question on global poverty rates
+
+### Goal
+
+This task aims to investigate whether the cGPA of a student is associated with whether they correctly answer a question on global poverty rates. We will use the hypothesis test for this task. We first assume no association between students' cGPA and their correctness regarding the global poverty question. We try to find statistical evidence to see if we can reject this hypothesis. If the p-value is larger than 0.05, it means we don't have evidence to reject our hypothesis. 
+
+### Wrangling the data
+
+```{r, message = FALSE}
+# Load library for janitor
+library(janitor)
+```
+
+```{r}
+# Load data and store it in cgpa_data
+cgpa_data <- read_xlsx("data/sta303-mini-portfolio-poverty.xlsx")
+# Use clean_names from janitor
+cgpa_data <- janitor::clean_names(cgpa_data) 
+# Rename variable names to be shorter and drop NA and not possible cGPA values
+cgpa_data <- cgpa_data %>% rename(global_poverty_ans=colnames(cgpa_data[2]),
+           cgpa=colnames(cgpa_data)[3]) %>% 
+  filter(!is.na(cgpa) & cgpa >0 & cgpa <= 4) %>%
+  mutate(correct = global_poverty_ans == "Halved")
+```
+
+
+### Visualizing the data
+
+```{r fig.height=7}
+# Create a set of histograms in one figure
+cgpa_data %>% ggplot(aes(x=cgpa, fill = correct)) + geom_histogram(binwidth = 0.209, position = "stack")
+```
+
+### Testing
+comment
+
+```{r, message=FALSE}
+# Conduct testing
+wilcox.test(cgpa~correct, data = cgpa_data)
+
+summary(lm(cgpa ~ correct, data = cgpa_data))
+```
+Not significant, cannot reject the hypothesis that there is no different between cGPA between students who correctly answered this question and those who did not. 
+
+
+\newpage
+
+# Writing sample
+
+### Introduction
+Yelp, Inc. posted a job description about an opening for a data scientist. As far as I understand, the central mission of data scientists at Yelp is to make interactions meaningful and use data to connect users, partners and the general public. To achieve this mission, data scientists need to make analyses, build models and design experiments. I will expand on the skills required for this job, how I possess these skills, and how they connect to my studies. Specifically, this writing sample discusses this role’s desired soft skills, analytical skills, and connection to studies. There are many skills required to develop a successful career at Yelp, but I will focus on communication, situational awareness, software languages, proficiency and data visualization in this writing sample. 
+
+### Soft skills
+Communication, problem-solving and situational awareness are key skills for data scientists at Yelp. Data scientists need to collaborate with partners to make designs and products. Data scientists also need to present products and results to stakeholders, so verbal and oral presentation skills are also crucial for communication. I have gained strong communication skills by doing group projects, building reports and making presentations. I did several statistical group projects at university, and I got A for most of these courses. Situational awareness is also demanded. Data scientists provide help to others by solving statistical problems. Understanding the situation, capturing the importance and providing most-needed support to others will make a successful career.
+
+### Analytic skills
+Being a data scientist need to have fluency in using data and programming software. Software coding languages are the language of communication for data scientists. Yelp requires fluency in using SQL and Python/R. I have taken three courses using Python and four courses using R. During my internship, I used SQL daily to access databases and process data. I also used Python to perform a data analysis report for a large set of data, including data collection, cleaning, visualizing, and exploratory data analysis. The job description also states data visualization skills using Matplotlib, Plotly, ggplot and Tableau. I have been learning these skills in my own time, and I have tried some projects using online resources. 
+
+### Connection to studies
+I will keep strengthening my data analysis skills with different languages in the future. I will take statistical courses that can strengthen my understanding of theoretical statistics study, statistical inference, data modelling, and data visualization. I will also try participating in some statistics and data competitions to use my skills in solving problems. I will also learn different software and languages, including but not limited to Java, JavaScript, My SQL, SAS, Tableau. I also found some exciting courses online and some valuable certificates that I can take.
+
+### Conclusion
+In conclusion, I have developed both soft skills and analytic skills now, but there are still lots of space for improvement. I have developed solid communication and problem-solving skills at school and during internships, but I can be more mindful of situational awareness in the future. I have also developed some fluency in using data analysis software and communicating with codes and software languages, but I am still far from being an expert. 
+
+
+**Word count:** 503 words
+
+\newpage
+
+# Reflection
+
+### What is something specific that I am proud of in this mini-portfolio?
+
+I have tried some packages (janitor) and some techniques. To understand more about data scientists and the work of data scientists, I research online about the job and daily work of a data scientist, and I gained a better understanding of the job, which is really useful for my career development. In this mini-portfolio, I reflected on my skills and my career plans. 
+
+### How might I apply what I've learned and demonstrated in this mini-portfolio in future work and study, after STA303/1002?
+
+I can clean data using janitor, make graphs, add labels and captions, and build cover letters for the future. This is my first-time trying to think about a job description in-depth, and I found it really helpful. In the future, I will take more analyzing job descriptions before applying. 
+
+### What is something I'd do differently next time?
+
+I will start earlier and use more time to polish my work. I will also explore R and techniques more and search online for more examples. 
+
+All filler text sourced from: [Hipster Ipsum](https://hipsum.co/)
